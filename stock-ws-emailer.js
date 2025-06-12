@@ -1,10 +1,10 @@
 const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
 const nodemailer = require('nodemailer');
 const { Server } = require('socket.io');
+const fetch = require('node-fetch');
 
-const WS_URL = 'wss://websocket.joshlei.com/growagarden/';
+const stockURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/stock';
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
@@ -15,7 +15,6 @@ if (!EMAIL_USER || !EMAIL_PASS || !RECIPIENT_EMAIL) {
   process.exit(1);
 }
 
-// Setup nodemailer transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: EMAIL_USER, pass: EMAIL_PASS },
@@ -23,8 +22,6 @@ const transporter = nodemailer.createTransport({
 
 let latestDataJSON = null;
 let latestDataObj = null;
-let reconnectDelay = 3000;
-let ws = null;
 
 // Setup Express and HTTP server
 const app = express();
@@ -33,7 +30,7 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Broadcast logs to all connected clients
+// Logs to terminal + clients
 function broadcastLog(msg) {
   const timestamp = new Date().toISOString();
   const fullMsg = `[${timestamp}] ${msg}`;
@@ -59,7 +56,7 @@ function buildHtmlEmail(data) {
     });
     html += `</tbody></table><br/>`;
   }
-  html += `<p>Received update from Grow A Garden live feed.</p>`;
+  html += `<p>Received update from Grow A Garden stock API.</p>`;
   return html;
 }
 
@@ -68,6 +65,7 @@ function sendEmail(data) {
     broadcastLog('No data to send email with.');
     return;
   }
+
   const htmlBody = buildHtmlEmail(data);
   const mailOptions = {
     from: `"Grow A Garden Bot" <${EMAIL_USER}>`,
@@ -85,44 +83,32 @@ function sendEmail(data) {
   });
 }
 
-function connect() {
-  ws = new WebSocket(WS_URL);
+// Polling function
+async function pollAPI() {
+  try {
+    const res = await fetch(stockURL);
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const data = await res.json();
+    const newDataJSON = JSON.stringify(data);
 
-  ws.on('open', () => {
-    broadcastLog('WebSocket connected');
-  });
-
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message);
-      const newDataJSON = JSON.stringify(data);
-      if (hasDataChanged(latestDataJSON, newDataJSON)) {
-        broadcastLog('Data changed — sending email...');
-        latestDataJSON = newDataJSON;
-        latestDataObj = data;
-        sendEmail(data);
-      } else {
-        broadcastLog('Data received but no changes detected.');
-      }
-    } catch (e) {
-      broadcastLog('Invalid JSON from websocket: ' + e.toString());
+    if (hasDataChanged(latestDataJSON, newDataJSON)) {
+      broadcastLog('Data changed — sending email...');
+      latestDataJSON = newDataJSON;
+      latestDataObj = data;
+      sendEmail(data);
+    } else {
+      broadcastLog('Data received but no changes detected.');
     }
-  });
-
-  ws.on('error', (err) => {
-    broadcastLog('WebSocket error: ' + err.toString());
-  });
-
-  ws.on('close', (code) => {
-    broadcastLog(`WebSocket disconnected with code ${code}. Reconnecting in ${reconnectDelay / 1000}s...`);
-    setTimeout(connect, reconnectDelay);
-  });
+  } catch (err) {
+    broadcastLog('Error polling API: ' + err.message);
+  }
 }
 
-// Start WebSocket connection
-connect();
+// Start polling every 10 seconds
+setInterval(pollAPI, 10_000);
+pollAPI(); // Run immediately once
 
-// Serve the live log page on /
+// Live log UI
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -161,7 +147,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// /test endpoint to send the current latest data via email
+// /test endpoint to manually trigger an email
 app.get('/test', (req, res) => {
   if (!latestDataObj) {
     return res.status(404).send('No data available to send.');
@@ -170,7 +156,7 @@ app.get('/test', (req, res) => {
   res.send('Test email sent if data was available. Check logs for status.');
 });
 
-// Start server
+// Start HTTP server
 server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
