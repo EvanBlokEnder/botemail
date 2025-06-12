@@ -1,0 +1,12 @@
+{
+  "name": "growagarden-ws-emailer",
+  "version": "1.0.0",
+  "main": "stock-ws-emailer.js",
+  "scripts": {
+    "start": "node stock-ws-emailer.js"
+  },
+  "dependencies": {
+    "ws": "^8.13.0",
+    "nodemailer": "^6.9.3"
+  }
+}
