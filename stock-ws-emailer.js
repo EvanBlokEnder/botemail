@@ -2,7 +2,9 @@ const express = require('express');
 const http = require('http');
 const nodemailer = require('nodemailer');
 const { Server } = require('socket.io');
-const WebSocket = require('ws');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+const stockURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/stock';
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
@@ -26,9 +28,10 @@ let latestDataObj = null;
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
 const PORT = process.env.PORT || 3000;
 
-// Logging helper
+// Broadcast logs to all connected clients
 function broadcastLog(msg) {
   const timestamp = new Date().toISOString();
   const fullMsg = `[${timestamp}] ${msg}`;
@@ -36,7 +39,10 @@ function broadcastLog(msg) {
   io.emit('log', fullMsg);
 }
 
-// HTML email builder
+function hasDataChanged(oldJSON, newJSON) {
+  return oldJSON !== newJSON;
+}
+
 function buildHtmlEmail(data) {
   let html = `<h2>Grow A Garden Stock Update</h2>`;
   for (const category in data) {
@@ -51,17 +57,15 @@ function buildHtmlEmail(data) {
     });
     html += `</tbody></table><br/>`;
   }
-  html += `<p>Received update from Grow A Garden WebSocket feed.</p>`;
+  html += `<p>Received update from Grow A Garden API feed.</p>`;
   return html;
 }
 
-// Email sender
 function sendEmail(data) {
   if (!data) {
     broadcastLog('No data to send email with.');
     return;
   }
-
   const htmlBody = buildHtmlEmail(data);
   const mailOptions = {
     from: `"Grow A Garden Bot" <${EMAIL_USER}>`,
@@ -79,39 +83,28 @@ function sendEmail(data) {
   });
 }
 
-// WebSocket connection
-const ws = new WebSocket('wss://websocket.joshlei.com/growagarden/');
-
-ws.on('open', () => {
-  broadcastLog('Connected to Grow A Garden WebSocket');
-});
-
-ws.on('message', (message) => {
+async function pollAPI() {
   try {
-    const data = JSON.parse(message);
+    const response = await fetch(stockURL);
+    const data = await response.json();
     const newDataJSON = JSON.stringify(data);
 
-    if (newDataJSON !== latestDataJSON) {
+    if (hasDataChanged(latestDataJSON, newDataJSON)) {
+      broadcastLog('Data changed — sending email...');
       latestDataJSON = newDataJSON;
       latestDataObj = data;
-      broadcastLog('New data received via WebSocket — sending email...');
       sendEmail(data);
     } else {
-      broadcastLog('WebSocket update — no changes.');
+      broadcastLog('Polled API — no changes detected.');
     }
   } catch (err) {
-    broadcastLog('Error parsing WebSocket message: ' + err.toString());
+    broadcastLog('Error polling API: ' + err.toString());
   }
-});
+}
 
-ws.on('error', (err) => {
-  broadcastLog('WebSocket error: ' + err.toString());
-});
-
-ws.on('close', () => {
-  broadcastLog('WebSocket connection closed. Reconnecting in 5s...');
-  setTimeout(() => process.exit(1), 5000); // Let a process manager like PM2 restart it
-});
+// Poll every 30 seconds
+setInterval(pollAPI, 30000);
+pollAPI();
 
 // Serve the live log page on /
 app.get('/', (req, res) => {
