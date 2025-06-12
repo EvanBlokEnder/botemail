@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const nodemailer = require('nodemailer');
 const { Server } = require('socket.io');
-const fetch = require('node-fetch');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const stockURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/stock';
 
