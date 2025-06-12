@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const nodemailer = require('nodemailer');
+const http = require('http');
 
 const WS_URL = 'wss://websocket.joshlei.com/growagarden/';
 
@@ -81,8 +82,6 @@ function connect() {
         console.log('Data changed — sending email...');
         latestDataJSON = newDataJSON;
         sendEmail(data);
-      } else {
-        // console.log('No data change.');
       }
     } catch (e) {
       console.warn('Invalid JSON from websocket:', e, message);
@@ -99,4 +98,16 @@ function connect() {
   });
 }
 
+// Start your WebSocket connection
 connect();
+
+// Minimal HTTP server to keep Glitch happy and respond to pings:
+const server = http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.end('Grow A Garden email notifier is running.\n');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`HTTP server listening on port ${PORT}`);
+});
