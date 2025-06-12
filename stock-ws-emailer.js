@@ -1,31 +1,45 @@
+const express = require('express');
+const http = require('http');
 const WebSocket = require('ws');
 const nodemailer = require('nodemailer');
-const http = require('http');
+const { Server } = require('socket.io');
 
 const WS_URL = 'wss://websocket.joshlei.com/growagarden/';
 
-// Load config from env vars:
-const EMAIL_USER = process.env.EMAIL_USER; // your Gmail or SMTP user
-const EMAIL_PASS = process.env.EMAIL_PASS; // app password or SMTP pass
-const RECIPIENT_EMAIL = process.env.RECIPIENT_EMAIL; // where to send notifications
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const RECIPIENT_EMAIL = process.env.RECIPIENT_EMAIL;
 
 if (!EMAIL_USER || !EMAIL_PASS || !RECIPIENT_EMAIL) {
   console.error('ERROR: Set EMAIL_USER, EMAIL_PASS, and RECIPIENT_EMAIL env vars.');
   process.exit(1);
 }
 
-// Setup Nodemailer transporter using Gmail SMTP (adjust if you use another SMTP)
+// Setup nodemailer transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS,
-  },
+  auth: { user: EMAIL_USER, pass: EMAIL_PASS },
 });
 
 let latestDataJSON = null;
+let latestDataObj = null;
 let reconnectDelay = 3000;
 let ws = null;
+
+// Setup Express and HTTP server
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+const PORT = process.env.PORT || 3000;
+
+// Broadcast logs to all connected clients
+function broadcastLog(msg) {
+  const timestamp = new Date().toISOString();
+  const fullMsg = `[${timestamp}] ${msg}`;
+  console.log(fullMsg);
+  io.emit('log', fullMsg);
+}
 
 function hasDataChanged(oldJSON, newJSON) {
   return oldJSON !== newJSON;
@@ -50,6 +64,10 @@ function buildHtmlEmail(data) {
 }
 
 function sendEmail(data) {
+  if (!data) {
+    broadcastLog('No data to send email with.');
+    return;
+  }
   const htmlBody = buildHtmlEmail(data);
   const mailOptions = {
     from: `"Grow A Garden Bot" <${EMAIL_USER}>`,
@@ -60,9 +78,9 @@ function sendEmail(data) {
 
   transporter.sendMail(mailOptions, (error, info) => {
     if (error) {
-      console.error('Error sending email:', error);
+      broadcastLog('Error sending email: ' + error.toString());
     } else {
-      console.log('Email sent:', info.response);
+      broadcastLog('Email sent: ' + info.response);
     }
   });
 }
@@ -71,7 +89,7 @@ function connect() {
   ws = new WebSocket(WS_URL);
 
   ws.on('open', () => {
-    console.log('WebSocket connected');
+    broadcastLog('WebSocket connected');
   });
 
   ws.on('message', (message) => {
@@ -79,35 +97,80 @@ function connect() {
       const data = JSON.parse(message);
       const newDataJSON = JSON.stringify(data);
       if (hasDataChanged(latestDataJSON, newDataJSON)) {
-        console.log('Data changed — sending email...');
+        broadcastLog('Data changed — sending email...');
         latestDataJSON = newDataJSON;
+        latestDataObj = data;
         sendEmail(data);
+      } else {
+        broadcastLog('Data received but no changes detected.');
       }
     } catch (e) {
-      console.warn('Invalid JSON from websocket:', e, message);
+      broadcastLog('Invalid JSON from websocket: ' + e.toString());
     }
   });
 
   ws.on('error', (err) => {
-    console.error('WebSocket error:', err);
+    broadcastLog('WebSocket error: ' + err.toString());
   });
 
   ws.on('close', (code) => {
-    console.log(`WebSocket disconnected with code ${code}. Reconnecting in ${reconnectDelay / 1000}s...`);
+    broadcastLog(`WebSocket disconnected with code ${code}. Reconnecting in ${reconnectDelay / 1000}s...`);
     setTimeout(connect, reconnectDelay);
   });
 }
 
-// Start your WebSocket connection
+// Start WebSocket connection
 connect();
 
-// Minimal HTTP server to keep Glitch happy and respond to pings:
-const server = http.createServer((req, res) => {
-  res.writeHead(200, {'Content-Type': 'text/plain'});
-  res.end('Grow A Garden email notifier is running.\n');
+// Serve the live log page on /
+app.get('/', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Grow A Garden - Live Logs</title>
+  <style>
+    body { background: #1e1e1e; color: #d4d4d4; font-family: monospace; margin: 0; padding: 0; }
+    #terminal {
+      padding: 1rem;
+      height: 90vh;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      background: #121212;
+      border: 1px solid #333;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h1 style="text-align:center; color:#6a9955;">Grow A Garden Live Terminal Logs</h1>
+  <div id="terminal"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const terminal = document.getElementById('terminal');
+    const socket = io();
+
+    socket.on('log', msg => {
+      terminal.textContent += msg + '\\n';
+      terminal.scrollTop = terminal.scrollHeight;
+    });
+  </script>
+</body>
+</html>
+  `);
 });
 
-const PORT = process.env.PORT || 3000;
+// /test endpoint to send the current latest data via email
+app.get('/test', (req, res) => {
+  if (!latestDataObj) {
+    return res.status(404).send('No data available to send.');
+  }
+  sendEmail(latestDataObj);
+  res.send('Test email sent if data was available. Check logs for status.');
+});
+
+// Start server
 server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
