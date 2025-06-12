@@ -15,6 +15,7 @@ if (!EMAIL_USER || !EMAIL_PASS || !RECIPIENT_EMAIL) {
   process.exit(1);
 }
 
+// Setup nodemailer transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: EMAIL_USER, pass: EMAIL_PASS },
@@ -30,7 +31,7 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Logs to terminal + clients
+// Broadcast logs to all connected clients
 function broadcastLog(msg) {
   const timestamp = new Date().toISOString();
   const fullMsg = `[${timestamp}] ${msg}`;
@@ -56,7 +57,7 @@ function buildHtmlEmail(data) {
     });
     html += `</tbody></table><br/>`;
   }
-  html += `<p>Received update from Grow A Garden stock API.</p>`;
+  html += `<p>Received update from Grow A Garden API feed.</p>`;
   return html;
 }
 
@@ -65,7 +66,6 @@ function sendEmail(data) {
     broadcastLog('No data to send email with.');
     return;
   }
-
   const htmlBody = buildHtmlEmail(data);
   const mailOptions = {
     from: `"Grow A Garden Bot" <${EMAIL_USER}>`,
@@ -83,12 +83,10 @@ function sendEmail(data) {
   });
 }
 
-// Polling function
 async function pollAPI() {
   try {
-    const res = await fetch(stockURL);
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    const data = await res.json();
+    const response = await fetch(stockURL);
+    const data = await response.json();
     const newDataJSON = JSON.stringify(data);
 
     if (hasDataChanged(latestDataJSON, newDataJSON)) {
@@ -97,18 +95,18 @@ async function pollAPI() {
       latestDataObj = data;
       sendEmail(data);
     } else {
-      broadcastLog('Data received but no changes detected.');
+      broadcastLog('Polled API — no changes detected.');
     }
   } catch (err) {
-    broadcastLog('Error polling API: ' + err.message);
+    broadcastLog('Error polling API: ' + err.toString());
   }
 }
 
-// Start polling every 10 seconds
-setInterval(pollAPI, 10_000);
-pollAPI(); // Run immediately once
+// Poll every 30 seconds
+setInterval(pollAPI, 30000);
+pollAPI();
 
-// Live log UI
+// Serve the live log page on /
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -147,7 +145,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// /test endpoint to manually trigger an email
+// /test endpoint to send the current latest data via email
 app.get('/test', (req, res) => {
   if (!latestDataObj) {
     return res.status(404).send('No data available to send.');
@@ -156,7 +154,7 @@ app.get('/test', (req, res) => {
   res.send('Test email sent if data was available. Check logs for status.');
 });
 
-// Start HTTP server
+// Start server
 server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
