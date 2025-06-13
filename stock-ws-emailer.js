@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const stockURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/stock';
+const weatherURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/weather';
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
@@ -21,8 +22,10 @@ const transporter = nodemailer.createTransport({
   auth: { user: EMAIL_USER, pass: EMAIL_PASS },
 });
 
-let latestDataJSON = null;
-let latestDataObj = null;
+let latestStockDataJSON = null;
+let latestStockDataObj = null;
+let latestWeatherDataJSON = null;
+let latestWeatherDataObj = null;
 
 // Setup Express and HTTP server
 const app = express();
@@ -43,7 +46,7 @@ function hasDataChanged(oldJSON, newJSON) {
   return oldJSON !== newJSON;
 }
 
-function buildHtmlEmail(data) {
+function buildStockHtmlEmail(data) {
   let html = `<h2>Grow A Garden Stock Update</h2>`;
   for (const category in data) {
     if (!Array.isArray(data[category])) continue;
@@ -61,50 +64,90 @@ function buildHtmlEmail(data) {
   return html;
 }
 
-function sendEmail(data) {
-  if (!data) {
-    broadcastLog('No data to send email with.');
-    return;
+function buildWeatherHtmlEmail(weatherEvent, discordInvite) {
+  const duration = weatherEvent.duration ? `${Math.floor(weatherEvent.duration / 60)} minutes` : 'Unknown';
+  let html = `<h2>Grow A Garden Weather Event</h2>`;
+  html += `<p><strong>Weather Event:</strong> ${weatherEvent.weather_name || weatherEvent.weather_id || 'Unknown'}</p>`;
+  html += `<p><strong>Duration:</strong> ${duration}</p>`;
+  if (discordInvite) {
+    html += `<p><strong>Join the Community:</strong> <a href="${discordInvite}">Discord Invite</a></p>`;
   }
-  const htmlBody = buildHtmlEmail(data);
+  html += `<p>New weather event detected in Grow A Garden!</p>`;
+  return html;
+}
+
+function sendEmail(subject, htmlBody) {
   const mailOptions = {
     from: `"Grow A Garden Bot" <${EMAIL_USER}>`,
     to: RECIPIENT_EMAIL,
-    subject: '🌱 Grow A Garden Stock Updated!',
+    subject: subject,
     html: htmlBody,
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
     if (error) {
-      broadcastLog('Error sending email: ' + error.toString());
+      broadcastLog(`Error sending email: ${error.toString()}`);
     } else {
-      broadcastLog('Email sent: ' + info.response);
+      broadcastLog(`Email sent: ${info.response}`);
     }
   });
 }
 
-async function pollAPI() {
+async function pollStockAPI() {
   try {
     const response = await fetch(stockURL);
     const data = await response.json();
     const newDataJSON = JSON.stringify(data);
 
-    if (hasDataChanged(latestDataJSON, newDataJSON)) {
-      broadcastLog('Data changed — sending email...');
-      latestDataJSON = newDataJSON;
-      latestDataObj = data;
-      sendEmail(data);
+    if (hasDataChanged(latestStockDataJSON, newDataJSON)) {
+      broadcastLog('Stock data changed — sending email...');
+      latestStockDataJSON = newDataJSON;
+      latestStockDataObj = data;
+      sendEmail('🌱 Grow A Garden Stock Updated!', buildStockHtmlEmail(data));
     } else {
-      broadcastLog('Polled API — no changes detected.');
+      broadcastLog('Polled Stock API — no changes detected.');
     }
   } catch (err) {
-    broadcastLog('Error polling API: ' + err.toString());
+    broadcastLog(`Error polling Stock API: ${err.toString()}`);
   }
 }
 
-// Poll every 30 seconds
-setInterval(pollAPI, 30000);
-pollAPI();
+async function pollWeatherAPI() {
+  try {
+    const response = await fetch(weatherURL);
+    const data = await response.json();
+    const newDataJSON = JSON.stringify(data);
+
+    if (hasDataChanged(latestWeatherDataJSON, newDataJSON)) {
+      broadcastLog('Weather data changed — checking for active events...');
+      const activeEvent = data.weather.find(w => w.active);
+      const prevActiveEvent = latestWeatherDataObj ? latestWeatherDataObj.weather.find(w => w.active) : null;
+
+      if (activeEvent && (!prevActiveEvent || activeEvent.weather_id !== prevActiveEvent.weather_id)) {
+        broadcastLog(`New active weather event: ${activeEvent.weather_name}`);
+        sendEmail(`🌦️ Grow A Garden Weather Event: ${activeEvent.weather_name}`, 
+                 buildWeatherHtmlEmail(activeEvent, data.discord_invite));
+      } else if (!activeEvent && prevActiveEvent) {
+        broadcastLog(`Weather event ended: ${prevActiveEvent.weather_name}`);
+      } else {
+        broadcastLog('No new active weather event detected.');
+      }
+
+      latestWeatherDataJSON = newDataJSON;
+      latestWeatherDataObj = data;
+    } else {
+      broadcastLog('Polled Weather API — no changes detected.');
+    }
+  } catch (err) {
+    broadcastLog(`Error polling Weather API: ${err.toString()}`);
+  }
+}
+
+// Poll APIs every 30 seconds
+setInterval(pollStockAPI, 30000);
+setInterval(pollWeatherAPI, 30000);
+pollStockAPI();
+pollWeatherAPI();
 
 // Serve the live log page on /
 app.get('/', (req, res) => {
@@ -147,11 +190,20 @@ app.get('/', (req, res) => {
 
 // /test endpoint to send the current latest data via email
 app.get('/test', (req, res) => {
-  if (!latestDataObj) {
+  if (!latestStockDataObj && !latestWeatherDataObj) {
     return res.status(404).send('No data available to send.');
   }
-  sendEmail(latestDataObj);
-  res.send('Test email sent if data was available. Check logs for status.');
+  if (latestStockDataObj) {
+    sendEmail('🌱 Grow A Garden Stock Updated!', buildStockHtmlEmail(latestStockDataObj));
+  }
+  if (latestWeatherDataObj && latestWeatherDataObj.weather) {
+    const activeEvent = latestWeatherDataObj.weather.find(w => w.active);
+    if (activeEvent) {
+      sendEmail(`🌦️ Grow A Garden Weather Event: ${activeEvent.weather_name}`, 
+               buildWeatherHtmlEmail(activeEvent, latestWeatherDataObj.discord_invite));
+    }
+  }
+  res.send('Test email(s) sent if data was available. Check logs for status.');
 });
 
 // Start server
