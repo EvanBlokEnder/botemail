@@ -9,10 +9,9 @@ const weatherURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
-const RECIPIENT_EMAIL = process.env.RECIPIENT_EMAIL;
 
-if (!EMAIL_USER || !EMAIL_PASS || !RECIPIENT_EMAIL) {
-  console.error('ERROR: Set EMAIL_USER, EMAIL_PASS, and RECIPIENT_EMAIL env vars.');
+if (!EMAIL_USER || !EMAIL_PASS) {
+  console.error('ERROR: Set EMAIL_USER and EMAIL_PASS env vars.');
   process.exit(1);
 }
 
@@ -27,12 +26,18 @@ let latestStockDataObj = null;
 let latestWeatherDataJSON = null;
 let latestWeatherDataObj = null;
 
+// Store subscribed emails (in memory for simplicity; use a database in production)
+const subscribedEmails = new Set();
+
 // Setup Express and HTTP server
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
+
+// Middleware to parse form data
+app.use(express.urlencoded({ extended: true }));
 
 // Broadcast logs to all connected clients
 function broadcastLog(msg) {
@@ -46,7 +51,7 @@ function hasDataChanged(oldJSON, newJSON) {
   return oldJSON !== newJSON;
 }
 
-function buildStockHtmlEmail(data) {
+function buildStockHtmlEmail(data, recipientEmail) {
   let html = `<h2>Grow A Garden Stock Update</h2>`;
   for (const category in data) {
     if (!Array.isArray(data[category])) continue;
@@ -61,10 +66,11 @@ function buildStockHtmlEmail(data) {
     html += `</tbody></table><br/>`;
   }
   html += `<p>Received update from Grow A Garden API feed.</p>`;
+  html += `<p style="font-size: 12px; color: #666;"><a href="http://yourappdomain.com/unsub?email=${encodeURIComponent(recipientEmail)}">Unsubscribe</a></p>`;
   return html;
 }
 
-function buildWeatherHtmlEmail(weatherEvent, discordInvite) {
+function buildWeatherHtmlEmail(weatherEvent, discordInvite, recipientEmail) {
   const duration = weatherEvent.duration ? `${Math.floor(weatherEvent.duration / 60)} minutes` : 'Unknown';
   let html = `<h2>Grow A Garden Weather Event</h2>`;
   html += `<p><strong>Weather Event:</strong> ${weatherEvent.weather_name || weatherEvent.weather_id || 'Unknown'}</p>`;
@@ -73,22 +79,23 @@ function buildWeatherHtmlEmail(weatherEvent, discordInvite) {
     html += `<p><strong>Join the Community:</strong> <a href="${discordInvite}">Discord Invite</a></p>`;
   }
   html += `<p>New weather event detected in Grow A Garden!</p>`;
+  html += `<p style="font-size: 12px; color: #666;"><a href="http://yourappdomain.com/unsub?email=${encodeURIComponent(recipientEmail)}">Unsubscribe</a></p>`;
   return html;
 }
 
-function sendEmail(subject, htmlBody) {
+function sendEmail(subject, htmlBody, recipientEmail) {
   const mailOptions = {
     from: `"Grow A Garden Bot" <${EMAIL_USER}>`,
-    to: RECIPIENT_EMAIL,
+    to: recipientEmail,
     subject: subject,
     html: htmlBody,
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
     if (error) {
-      broadcastLog(`Error sending email: ${error.toString()}`);
+      broadcastLog(`Error sending email to ${recipientEmail}: ${error.toString()}`);
     } else {
-      broadcastLog(`Email sent: ${info.response}`);
+      broadcastLog(`Email sent to ${recipientEmail}: ${info.response}`);
     }
   });
 }
@@ -100,10 +107,12 @@ async function pollStockAPI() {
     const newDataJSON = JSON.stringify(data);
 
     if (hasDataChanged(latestStockDataJSON, newDataJSON)) {
-      broadcastLog('Stock data changed — sending email...');
+      broadcastLog('Stock data changed — sending emails to subscribers...');
       latestStockDataJSON = newDataJSON;
       latestStockDataObj = data;
-      sendEmail('🌱 Grow A Garden Stock Updated!', buildStockHtmlEmail(data));
+      subscribedEmails.forEach(email => {
+        sendEmail('🌱 Grow A Garden Stock Updated!', buildStockHtmlEmail(data, email), email);
+      });
     } else {
       broadcastLog('Polled Stock API — no changes detected.');
     }
@@ -125,8 +134,10 @@ async function pollWeatherAPI() {
 
       if (activeEvent && (!prevActiveEvent || activeEvent.weather_id !== prevActiveEvent.weather_id)) {
         broadcastLog(`New active weather event: ${activeEvent.weather_name}`);
-        sendEmail(`🌦️ Grow A Garden Weather Event: ${activeEvent.weather_name}`, 
-                 buildWeatherHtmlEmail(activeEvent, data.discord_invite));
+        subscribedEmails.forEach(email => {
+          sendEmail(`🌦️ Grow A Garden Weather Event: ${activeEvent.weather_name}`, 
+                   buildWeatherHtmlEmail(activeEvent, data.discord_invite, email), email);
+        });
       } else if (!activeEvent && prevActiveEvent) {
         broadcastLog(`Weather event ended: ${prevActiveEvent.weather_name}`);
       } else {
@@ -149,7 +160,7 @@ setInterval(pollWeatherAPI, 30000);
 pollStockAPI();
 pollWeatherAPI();
 
-// Serve the live log page on /
+// Serve the live log page with subscription form
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -160,17 +171,52 @@ app.get('/', (req, res) => {
     body { background: #1e1e1e; color: #d4d4d4; font-family: monospace; margin: 0; padding: 0; }
     #terminal {
       padding: 1rem;
-      height: 90vh;
+      height: 70vh;
       overflow-y: auto;
       white-space: pre-wrap;
       background: #121212;
       border: 1px solid #333;
       box-sizing: border-box;
     }
+    .subscribe-form {
+      text-align: center;
+      padding: 1rem;
+      background: #1e1e1e;
+    }
+    .subscribe-form input[type="email"] {
+      padding: 0.5rem;
+      font-size: 1rem;
+      background: #333;
+      color: #d4d4d4;
+      border: 1px solid #6a9955;
+      margin-right: 0.5rem;
+    }
+    .subscribe-form button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      background: #6a9955;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+    }
+    .subscribe-form button:hover {
+      background: #4a7a3a;
+    }
+    .subscribe-form p {
+      color: #ff5555;
+      margin: 0.5rem 0 0;
+    }
   </style>
 </head>
 <body>
   <h1 style="text-align:center; color:#6a9955;">Grow A Garden Live Terminal Logs</h1>
+  <div class="subscribe-form">
+    <form action="/subscribe" method="POST">
+      <input type="email" name="email" placeholder="Enter your email" required>
+      <button type="submit">Subscribe</button>
+    </form>
+    <p id="subscribe-message"></p>
+  </div>
   <div id="terminal"></div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -182,10 +228,45 @@ app.get('/', (req, res) => {
       terminal.textContent += msg + '\\n';
       terminal.scrollTop = terminal.scrollHeight;
     });
+
+    // Display subscription feedback
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('subscribed')) {
+      document.getElementById('subscribe-message').textContent = 'Successfully subscribed!';
+    } else if (urlParams.get('unsubscribed')) {
+      document.getElementById('subscribe-message').textContent = 'Successfully unsubscribed!';
+    } else if (urlParams.get('error')) {
+      document.getElementById('subscribe-message').textContent = decodeURIComponent(urlParams.get('error'));
+    }
   </script>
 </body>
 </html>
   `);
+});
+
+// Subscribe endpoint
+app.post('/subscribe', (req, res) => {
+  const email = req.body.email;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.redirect('/?error=' + encodeURIComponent('Invalid email address.'));
+  }
+  if (subscribedEmails.has(email)) {
+    return res.redirect('/?error=' + encodeURIComponent('Email already subscribed.'));
+  }
+  subscribedEmails.add(email);
+  broadcastLog(`New subscriber: ${email}`);
+  res.redirect('/?subscribed=true');
+});
+
+// Unsubscribe endpoint
+app.get('/unsub', (req, res) => {
+  const email = req.query.email;
+  if (!email || !subscribedEmails.has(email)) {
+    return res.redirect('/?error=' + encodeURIComponent('Email not found in subscription list.'));
+  }
+  subscribedEmails.delete(email);
+  broadcastLog(`Unsubscribed: ${email}`);
+  res.redirect('/?unsubscribed=true');
 });
 
 // /test endpoint to send the current latest data via email
@@ -194,16 +275,20 @@ app.get('/test', (req, res) => {
     return res.status(404).send('No data available to send.');
   }
   if (latestStockDataObj) {
-    sendEmail('🌱 Grow A Garden Stock Updated!', buildStockHtmlEmail(latestStockDataObj));
+    subscribedEmails.forEach(email => {
+      sendEmail('🌱 Grow A Garden Stock Updated!', buildStockHtmlEmail(latestStockDataObj, email), email);
+    });
   }
   if (latestWeatherDataObj && latestWeatherDataObj.weather) {
     const activeEvent = latestWeatherDataObj.weather.find(w => w.active);
     if (activeEvent) {
-      sendEmail(`🌦️ Grow A Garden Weather Event: ${activeEvent.weather_name}`, 
-               buildWeatherHtmlEmail(activeEvent, latestWeatherDataObj.discord_invite));
+      subscribedEmails.forEach(email => {
+        sendEmail(`🌦️ Grow A Garden Weather Event: ${activeEvent.weather_name}`, 
+                 buildWeatherHtmlEmail(activeEvent, latestWeatherDataObj.discord_invite, email), email);
+      });
     }
   }
-  res.send('Test email(s) sent if data was available. Check logs for status.');
+  res.send('Test email(s) sent to subscribers if data was available. Check logs for status.');
 });
 
 // Start server
