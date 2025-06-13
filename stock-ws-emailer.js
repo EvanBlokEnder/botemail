@@ -286,10 +286,11 @@ app.get('/test', (req, res) => {
       });
     }
   }
-  res.send('Test email(s) sent to subscribers if data was available. Check logs for status.');
+  res.send('Test emails were sent i think. if you dont see anything then api might be down i dont know.');
 });
 
 // server start for offline deploy i think i hope no one reads this
 server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
+//my hands hurt :(
