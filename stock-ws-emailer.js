@@ -256,7 +256,7 @@ app.post('/subscribe', (req, res) => {
   res.redirect('/?subscribed=true');
 });
 
-// Unsubscribe endpoint
+// Unsub
 app.get('/unsub', (req, res) => {
   const email = req.query.email;
   if (!email || !subscribedEmails.has(email)) {
