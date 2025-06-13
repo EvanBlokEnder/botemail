@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const { Server } = require('socket.io');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
+// im using proxies cause i dont know i want to dont judge me.
 const stockURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/stock';
 const weatherURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/weather';
 
