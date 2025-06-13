@@ -26,20 +26,19 @@ let latestStockDataObj = null;
 let latestWeatherDataJSON = null;
 let latestWeatherDataObj = null;
 
-// Store subscribed emails (in memory for simplicity; use a database in production)
+// i hope this shit works 🙏
 const subscribedEmails = new Set();
 
-// Setup Express and HTTP server
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Middleware to parse form data
+//middlesomthing forgot what its called
 app.use(express.urlencoded({ extended: true }));
 
-// Broadcast logs to all connected clients
+// log thing
 function broadcastLog(msg) {
   const timestamp = new Date().toISOString();
   const fullMsg = `[${timestamp}] ${msg}`;
@@ -154,13 +153,12 @@ async function pollWeatherAPI() {
   }
 }
 
-// Poll APIs every 30 seconds
+// check server for stokS
 setInterval(pollStockAPI, 30000);
 setInterval(pollWeatherAPI, 30000);
 pollStockAPI();
 pollWeatherAPI();
 
-// Serve the live log page with subscription form
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -244,7 +242,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Subscribe endpoint
+//sub thing i think.
 app.post('/subscribe', (req, res) => {
   const email = req.body.email;
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -269,7 +267,7 @@ app.get('/unsub', (req, res) => {
   res.redirect('/?unsubscribed=true');
 });
 
-// /test endpoint to send the current latest data via email
+// this code ia messy but atleast it works.
 app.get('/test', (req, res) => {
   if (!latestStockDataObj && !latestWeatherDataObj) {
     return res.status(404).send('No data available to send.');
@@ -291,7 +289,7 @@ app.get('/test', (req, res) => {
   res.send('Test email(s) sent to subscribers if data was available. Check logs for status.');
 });
 
-// Start server
+// server start for offline deploy i think i hope no one reads this
 server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
