@@ -15,7 +15,7 @@ if (!EMAIL_USER || !EMAIL_PASS) {
   process.exit(1);
 }
 
-// Setup nodemailer transporter
+
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: EMAIL_USER, pass: EMAIL_PASS },
