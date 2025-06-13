@@ -66,7 +66,7 @@ function buildStockHtmlEmail(data, recipientEmail) {
     html += `</tbody></table><br/>`;
   }
   html += `<p>Received update from Grow A Garden API feed.</p>`;
-  html += `<p style="font-size: 12px; color: #666;"><a href="http://yourappdomain.com/unsub?email=${encodeURIComponent(recipientEmail)}">Unsubscribe</a></p>`;
+  html += `<p style="font-size: 12px; color: #666;"><a href="http://botemail-wrdo.onrender.com/unsub?email=${encodeURIComponent(recipientEmail)}">Unsubscribe</a></p>`;
   return html;
 }
 
