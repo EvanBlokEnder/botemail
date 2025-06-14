@@ -155,8 +155,8 @@ async function pollWeatherAPI() {
 }
 
 // check server for stokS
-setInterval(pollStockAPI, 3000);
-setInterval(pollWeatherAPI, 3000);
+setInterval(pollStockAPI, 15000);
+setInterval(pollWeatherAPI, 15000);
 pollStockAPI();
 pollWeatherAPI();
 
