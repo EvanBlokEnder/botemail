@@ -373,9 +373,8 @@ app.get('/', (req, res) => {
     subscribeForm.onsubmit = function(e) {
       e.preventDefault();
       const email = subscribeForm.querySelector('input[name="email"]').value.trim();
-      console.log('Client-side email input:', email); // Debug log
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-        document.getElementById('subscribe-message').textContent = 'Invalid email address.';
+      if (!email) {
+        document.getElementById('subscribe-message').textContent = 'Email cannot be empty.';
         return;
       }
       popupEmail.value = email;
@@ -407,9 +406,8 @@ app.get('/', (req, res) => {
 
 app.post('/subscribe', (req, res) => {
   const email = req.body.email ? req.body.email.trim() : '';
-  console.log('Server-side email received:', email); // Debug log
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-    return res.redirect('/?error=' + encodeURIComponent('Invalid email address.'));
+  if (!email) {
+    return res.redirect('/?error=' + encodeURIComponent('Email cannot be empty.'));
   }
   if (subscriptions.has(email)) {
     return res.redirect('/?error=' + encodeURIComponent('Email already subscribed.'));
