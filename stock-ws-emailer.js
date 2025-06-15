@@ -372,8 +372,9 @@ app.get('/', (req, res) => {
 
     subscribeForm.onsubmit = function(e) {
       e.preventDefault();
-      const email = subscribeForm.querySelector('input[name="email"]').value;
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      const email = subscribeForm.querySelector('input[name="email"]').value.trim();
+      console.log('Client-side email input:', email); // Debug log
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
         document.getElementById('subscribe-message').textContent = 'Invalid email address.';
         return;
       }
@@ -405,8 +406,9 @@ app.get('/', (req, res) => {
 });
 
 app.post('/subscribe', (req, res) => {
-  const email = req.body.email;
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  const email = req.body.email ? req.body.email.trim() : '';
+  console.log('Server-side email received:', email); // Debug log
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
     return res.redirect('/?error=' + encodeURIComponent('Invalid email address.'));
   }
   if (subscriptions.has(email)) {
