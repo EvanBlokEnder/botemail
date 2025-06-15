@@ -16,7 +16,6 @@ if (!EMAIL_USER || !EMAIL_PASS) {
   process.exit(1);
 }
 
-
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: EMAIL_USER, pass: EMAIL_PASS },
@@ -53,7 +52,9 @@ function hasDataChanged(oldJSON, newJSON) {
 
 function buildStockHtmlEmail(data, recipientEmail) {
   let html = `<h2>Grow A Garden Stock Update</h2>`;
-  for (const category in data) {
+  const allowedCategories = ['seed_stock', 'gear_stock'];
+
+  for (const category of allowedCategories) {
     if (!Array.isArray(data[category])) continue;
     html += `<h3 style="color:#2f4f2f; text-transform: capitalize; border-bottom: 2px solid #6a9955;">${category.replace(/_/g, ' ')}</h3>`;
     html += `<table style="border-collapse: collapse; width: 100%; max-width: 600px;">`;
@@ -79,7 +80,7 @@ function buildWeatherHtmlEmail(weatherEvent, discordInvite, recipientEmail) {
     html += `<p><strong>Join the Community:</strong> <a href="${discordInvite}">Discord Invite</a></p>`;
   }
   html += `<p>New weather event detected in Grow A Garden!</p>`;
-  html += `<p style="font-size: 12px; color: #666;"><a href="http://yourappdomain.com/unsub?email=${encodeURIComponent(recipientEmail)}">Unsubscribe</a></p>`;
+  html += `<p style="font-size: 12px; color: #666;"><a href="http://botemail-wrdo.onrender.com/unsub?email=${encodeURIComponent(recipientEmail)}">Unsubscribe</a></p>`;
   return html;
 }
 
@@ -294,4 +295,3 @@ app.get('/test', (req, res) => {
 server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
-//my hands hurt :(
