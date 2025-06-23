@@ -6,7 +6,7 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 
 const stockURL = 'https://api.joshlei.com/v2/growagarden/stock';
 const weatherURL = 'https://api.joshlei.com/v2/growagarden/weather';
-const itemInfoURL = 'https://api.joshlei.com/v2/growagarden/item-info/';
+const itemInfoURL = 'https://api.joshlei.com/v2/growagarden/info/';
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
