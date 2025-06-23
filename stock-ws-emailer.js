@@ -4,8 +4,8 @@ const nodemailer = require('nodemailer');
 const { Server } = require('socket.io');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
-const stockURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/stock';
-const weatherURL = 'https://corsproxy.io/?https://api.joshlei.com/v2/growagarden/weather';
+const stockURL = 'https://api.joshlei.com/v2/growagarden/stock';
+const weatherURL = 'https://api.joshlei.com/v2/growagarden/weather';
 const itemInfoURL = 'https://api.joshlei.com/v2/growagarden/item-info/';
 
 const EMAIL_USER = process.env.EMAIL_USER;
