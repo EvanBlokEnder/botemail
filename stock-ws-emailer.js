@@ -104,7 +104,7 @@ function buildWeatherHtmlEmail(weatherEvent, discordInvite, recipientEmail) {
   html += `<p><strong>Weather Event:</strong> ${weatherEvent.weather_name || weatherEvent.weather_id || 'Unknown'}</p>`;
   html += `<p><strong>Duration:</strong> ${duration}</p>`;
   if (discordInvite) {
-    html += `<p><strong>Join the Community:</strong> <a href="${discordInvite}">Discord Invite</a></p>`;
+    html += `<p><strong>Join the Community:</strong> <a href="${discordInvite}">Button</a></p>`;
   }
   html += `<p>New weather event detected in Grow A Garden!</p>`;
   html += `<p style="font-size: 12px; color: #666;"><a href="http://botemail-wrdo.onrender.com/unsub?email=${encodeURIComponent(recipientEmail)}">Unsubscribe</a></p>`;
